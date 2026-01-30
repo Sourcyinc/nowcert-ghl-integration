@@ -18,35 +18,43 @@ class TokenManager:
         self.base_url = settings.NOWCERTS_BASE_URL
         self.username = settings.NOWCERTS_USERNAME
         self.password = settings.NOWCERTS_PASSWORD
-        self.client_id = settings.NOWCERTS_CLIENT_ID
-        self.client_secret = settings.NOWCERTS_CLIENT_SECRET
+        # NowCerts usa 'ngAuthApp' como client_id por defecto
+        self.client_id = settings.NOWCERTS_CLIENT_ID or "ngAuthApp"
         
         self._access_token: Optional[str] = None
         self._refresh_token: Optional[str] = None
+        self._token_type: Optional[str] = None
         self._token_expires_at: Optional[datetime] = None
     
     async def _login(self) -> Dict[str, Any]:
         """
         Realiza login en NowCerts y obtiene tokens
         
+        NowCerts usa OAuth2 con form-urlencoded, no JSON.
+        Endpoint: POST /api/token
+        Body: grant_type=password&username=...&password=...&client_id=ngAuthApp
+        
         Returns:
             Respuesta con access_token y refresh_token
         """
-        url = f"{self.base_url}/api/auth/login"
+        url = f"{self.base_url}/api/token"
         
-        payload = {
+        # NowCerts requiere form-urlencoded, no JSON
+        data = {
+            "grant_type": "password",
             "username": self.username,
-            "password": self.password
+            "password": self.password,
+            "client_id": self.client_id
         }
-        
-        # Si hay client_id y client_secret, usarlos
-        if self.client_id and self.client_secret:
-            payload["client_id"] = self.client_id
-            payload["client_secret"] = self.client_secret
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                response = await client.post(url, json=payload)
+                # Enviar como form-urlencoded
+                response = await client.post(
+                    url,
+                    data=data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
                 response.raise_for_status()
                 return response.json()
             
@@ -68,6 +76,8 @@ class TokenManager:
         """
         Renueva el access_token usando el refresh_token
         
+        NowCerts usa el mismo endpoint /api/token pero con grant_type=refresh_token
+        
         Returns:
             Nueva respuesta con tokens
         """
@@ -75,15 +85,25 @@ class TokenManager:
             # Si no hay refresh_token, hacer login completo
             return await self._login()
         
-        url = f"{self.base_url}/api/auth/refresh"
+        url = f"{self.base_url}/api/token"
         
-        payload = {
-            "refresh_token": self._refresh_token
+        # Obtener client_id de la respuesta anterior o usar el por defecto
+        client_id = getattr(self, '_client_id_from_response', self.client_id)
+        
+        # NowCerts requiere form-urlencoded para refresh también
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": self._refresh_token,
+            "client_id": client_id
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                response = await client.post(url, json=payload)
+                response = await client.post(
+                    url,
+                    data=data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
                 response.raise_for_status()
                 return response.json()
             
@@ -144,9 +164,26 @@ class TokenManager:
             # Actualizar tokens
             self._access_token = token_data.get("access_token")
             self._refresh_token = token_data.get("refresh_token")
+            self._token_type = token_data.get("token_type", "Bearer")
             
-            # Calcular expiración (asumir 1 hora si no se especifica)
-            expires_in = token_data.get("expires_in", 3600)
+            # Guardar client_id de la respuesta si está presente
+            if "as:client_id" in token_data:
+                self._client_id_from_response = token_data.get("as:client_id")
+            
+            # Calcular expiración
+            # NowCerts puede retornar expires_in o .expires
+            expires_in = token_data.get("expires_in")
+            if not expires_in and ".expires" in token_data:
+                # Parsear fecha de expiración
+                expires_str = token_data.get(".expires")
+                try:
+                    expires_date = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
+                    expires_in = int((expires_date - now).total_seconds())
+                except:
+                    expires_in = 3600  # Default 1 hora
+            else:
+                expires_in = expires_in or 3600  # Default 1 hora
+            
             self._token_expires_at = now + timedelta(seconds=expires_in)
             
             logger.info(f"Token renovado exitosamente. Expira en {expires_in} segundos")
@@ -166,8 +203,10 @@ class TokenManager:
         if not self._access_token:
             raise TokenExpiredError("No hay access token disponible")
         
+        token_type = self._token_type or "Bearer"
+        
         return {
-            "Authorization": f"Bearer {self._access_token}",
+            "Authorization": f"{token_type} {self._access_token}",
             "Content-Type": "application/json"
         }
 

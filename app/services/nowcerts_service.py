@@ -103,13 +103,49 @@ class NowCertsService:
         """
         Crea un contacto/asegurado en NowCerts
         
+        Endpoint: POST /api/Insured/Insert
+        Estructura esperada:
+        - commercialName (opcional, para empresas)
+        - firstName + lastName (opcional, si no hay commercialName)
+        - active: true
+        - addressLine1
+        - stateNameOrAbbreviation
+        - description
+        
         Args:
             contact_data: Datos del contacto
         
         Returns:
             Contacto creado
         """
-        return await self._make_request("POST", "/api/contacts", contact_data)
+        # Mapear a la estructura que NowCerts espera
+        nowcerts_data = {
+            "active": True,
+            "description": contact_data.get("description", "imported from Web Services")
+        }
+        
+        # Si hay commercialName, usarlo (empresa)
+        if contact_data.get("commercialName"):
+            nowcerts_data["commercialName"] = contact_data.get("commercialName")
+        else:
+            # Si no, usar firstName y lastName (persona)
+            nowcerts_data["firstName"] = contact_data.get("firstName", "")
+            nowcerts_data["lastName"] = contact_data.get("lastName", "")
+        
+        # Dirección
+        address = contact_data.get("address", {})
+        if address.get("street"):
+            nowcerts_data["addressLine1"] = address.get("street")
+        elif contact_data.get("addressLine1"):
+            nowcerts_data["addressLine1"] = contact_data.get("addressLine1")
+        
+        # Estado
+        if address.get("state"):
+            nowcerts_data["stateNameOrAbbreviation"] = address.get("state")
+        elif contact_data.get("state"):
+            nowcerts_data["stateNameOrAbbreviation"] = contact_data.get("state")
+        
+        return await self._make_request("POST", "/api/Insured/Insert", nowcerts_data)
     
     async def update_contact(self, contact_id: str, contact_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -128,13 +164,24 @@ class NowCertsService:
         """
         Crea una póliza en NowCerts
         
+        Endpoint: POST /api/Policy/Insert
+        Estructura esperada:
+        - number: Número de póliza
+        - insuredName: Nombre del asegurado
+        
         Args:
             policy_data: Datos de la póliza
         
         Returns:
             Póliza creada
         """
-        return await self._make_request("POST", "/api/policies", policy_data)
+        # Mapear a la estructura que NowCerts espera
+        nowcerts_policy = {
+            "number": policy_data.get("policyNumber") or policy_data.get("number", ""),
+            "insuredName": policy_data.get("insuredName", "")
+        }
+        
+        return await self._make_request("POST", "/api/Policy/Insert", nowcerts_policy)
     
     async def update_policy(self, policy_id: str, policy_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -153,13 +200,22 @@ class NowCertsService:
         """
         Crea una cotización en NowCerts
         
+        Nota: NowCerts puede usar el mismo endpoint de Policy para cotizaciones
+        o tener un endpoint específico. Por ahora usamos Policy/Insert.
+        
         Args:
             quote_data: Datos de la cotización
         
         Returns:
             Cotización creada
         """
-        return await self._make_request("POST", "/api/quotes", quote_data)
+        # Mapear cotización a estructura de póliza (NowCerts puede tratarlas similar)
+        policy_data = {
+            "number": quote_data.get("quoteNumber") or quote_data.get("number", ""),
+            "insuredName": quote_data.get("insuredName", "")
+        }
+        
+        return await self._make_request("POST", "/api/Policy/Insert", policy_data)
     
     async def update_quote(self, quote_id: str, quote_data: Dict[str, Any]) -> Dict[str, Any]:
         """

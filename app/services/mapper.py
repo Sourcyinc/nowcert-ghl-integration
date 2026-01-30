@@ -13,25 +13,37 @@ class DataMapper:
         """
         Convierte datos de contacto de GHL a formato NowCerts
         
+        NowCerts espera:
+        - firstName + lastName (para personas)
+        - commercialName (para empresas)
+        - active: true
+        - addressLine1
+        - stateNameOrAbbreviation
+        - description
+        
         Args:
             ghl_data: Datos del contacto desde GHL
         
         Returns:
             Datos en formato NowCerts
         """
-        return {
+        nowcerts_data = {
             "firstName": ghl_data.get("firstName", ""),
             "lastName": ghl_data.get("lastName", ""),
-            "email": ghl_data.get("email", ""),
-            "phone": ghl_data.get("phone", ""),
-            "address": {
-                "street": ghl_data.get("address1", ""),
-                "city": ghl_data.get("city", ""),
-                "state": ghl_data.get("state", ""),
-                "zip": ghl_data.get("postalCode", "")
-            },
-            "source": ghl_data.get("source", "GHL")
+            "active": True,
+            "addressLine1": ghl_data.get("address1", ""),
+            "stateNameOrAbbreviation": ghl_data.get("state", ""),
+            "description": f"imported from GHL - {ghl_data.get('source', 'GHL')}"
         }
+        
+        # Si hay commercialName en GHL, usarlo (empresa)
+        if ghl_data.get("commercialName"):
+            nowcerts_data["commercialName"] = ghl_data.get("commercialName")
+            # Remover firstName/lastName si es empresa
+            nowcerts_data.pop("firstName", None)
+            nowcerts_data.pop("lastName", None)
+        
+        return nowcerts_data
     
     @staticmethod
     def nowcerts_to_ghl_contact(nowcerts_data: Dict[str, Any]) -> Dict[str, Any]:

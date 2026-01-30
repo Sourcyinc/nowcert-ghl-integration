@@ -34,8 +34,7 @@ class Settings(BaseSettings):
     NOWCERTS_BASE_URL: str = "https://api.nowcerts.com"
     NOWCERTS_USERNAME: Optional[str] = None
     NOWCERTS_PASSWORD: Optional[str] = None
-    NOWCERTS_CLIENT_ID: Optional[str] = None
-    NOWCERTS_CLIENT_SECRET: Optional[str] = None
+    NOWCERTS_CLIENT_ID: Optional[str] = "ngAuthApp"  # Valor por defecto según documentación
     
     # GoHighLevel API
     GHL_BASE_URL: str = "https://services.leadconnectorhq.com"
